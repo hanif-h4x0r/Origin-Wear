@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Products</h1>
+<div id="products"></div>
+<script>
+    fetch("/api/products")
+        .then(r => r.json())
+        .then(products => {
+            const container = document.getElementById("products");
+            products.forEach(p => {
+                const card = document.createElement("div");
+                card.className = "card";
+                const name = document.createElement("h3");
+                name.textContent = p.name;
+                const price = document.createElement("p");
+                price.textContent = "Rp " + p.price;
+                card.appendChild(name);
+                card.appendChild(price);
+                container.appendChild(card);
+            })
+        })
+</script>
+{% endblock %}
