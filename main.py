@@ -1,12 +1,17 @@
 import os
-from dotenv import load_dotenv
+import jwt
 import psycopg2
+import bcrypt
+from datetime import datetime, timedelta, timezone
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
 from pathlib import Path
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY")
 
 BASE = Path(__file__).parent
 
@@ -94,3 +99,51 @@ def update_product(product_id: int, product: ProductCreate):
     if row is None:
         raise HTTPException(status_code=404, detail="Product not found")
     return {"id": product_id, "name": product.name, "price": product.price}
+
+class UserCreate(BaseModel):
+    email: str
+    password: str
+
+@app.post("/api/register", status_code=201)
+def register(user: UserCreate):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE email = %s;", (user.email,))
+    if cur.fetchone() is not None:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=400, detail="Email already registered")
+    hashed = bcrypt.hashpw(user.password.encode(), bcrypt.gensalt())
+    cur.execute(
+        "INSERT INTO users (email, password_hash) VALUES (%s, %s) RETURNING id;",
+        (user.email, hashed.decode()),
+    )
+    new_id = cur.fetchone()[0]
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"id": new_id, "email": user.email}
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+@app.post("/api/login")
+def login(user: UserLogin):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, password_hash FROM users WHERE email = %s;", (user.email,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if row is None:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    user_id, password_hash = row
+    if not bcrypt.checkpw(user.password.encode(), password_hash.encode()):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = jwt.encode(
+        {"sub": str(user_id), "exp": datetime.now(timezone.utc) + timedelta(hours=24)},
+        SECRET_KEY,
+        algorithm="HS256",
+    )
+    return {"access_token": token, "token_type": "bearer"}
