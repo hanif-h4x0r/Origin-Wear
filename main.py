@@ -1,9 +1,12 @@
+import os
+from dotenv import load_dotenv
 import psycopg2
 from fastapi import FastAPI, Request, HTTPException
 from pathlib import Path
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+load_dotenv()
 
 BASE = Path(__file__).parent
 
@@ -12,11 +15,11 @@ templates = Jinja2Templates(directory=BASE / "templates")
 
 def get_conn():
     return psycopg2.connect(
-        dbname="origin_wear",
-        user="postgres",
-        password="123",
-        host="localhost",
-        port="5432"
+        dbname=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        host=os.getenv("DB_HOST"),
+        port=os.getenv("DB_PORT"),
     )
 
 @app.get("/")
