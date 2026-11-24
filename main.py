@@ -2,6 +2,8 @@ import os
 import jwt
 import psycopg2
 import bcrypt
+from fastapi import Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
@@ -15,6 +17,8 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 
 BASE = Path(__file__).parent
 
+security = HTTPBearer()
+
 app = FastAPI(title="Origin Wear Shop")
 templates = Jinja2Templates(directory=BASE / "templates")
 
@@ -26,6 +30,19 @@ def get_conn():
         host=os.getenv("DB_HOST"),
         port=os.getenv("DB_PORT"),
     )
+
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        user_id = int(payload["sub"])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired, login again")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return user_id
+
 
 @app.get("/")
 def home(request: Request):
@@ -52,7 +69,7 @@ class ProductCreate(BaseModel):
     price: int
 
 @app.post("/api/products", status_code=201)
-def create_product(product: ProductCreate):
+def create_product(product: ProductCreate, user_id: int = Depends(get_current_user)):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("INSERT INTO products (name, price) VALUES (%s, %s) RETURNING id;", (product.name, product.price))
@@ -75,7 +92,7 @@ def get_product(product_id: int):
     return {"id": row[0], "name": row[1], "price": row[2]}
 
 @app.delete("/api/products/{product_id}")
-def delete_products(product_id: int):
+def delete_products(product_id: int, user_id: int = Depends(get_current_user)):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("DELETE FROM products WHERE id = %s RETURNING id;", (product_id,))
@@ -88,7 +105,7 @@ def delete_products(product_id: int):
     return {"message": "Product deleted", "id": product_id}
 
 @app.put("/api/products/{product_id}")
-def update_product(product_id: int, product: ProductCreate):
+def update_product(product_id: int, product: ProductCreate, user_id: int = Depends(get_current_user)):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("UPDATE products SET name = %s, price = %s WHERE id = %s RETURNING id;", (product.name, product.price, product_id))
@@ -147,3 +164,6 @@ def login(user: UserLogin):
         algorithm="HS256",
     )
     return {"access_token": token, "token_type": "bearer"}
+
+
+
